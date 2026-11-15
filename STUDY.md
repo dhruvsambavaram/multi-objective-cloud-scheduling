@@ -281,6 +281,59 @@ Linear Program" means: linear maths, with some variables forced to be whole numb
 ```
 
 
+**How the MILP and HiGHS relate: the question vs the one who answers it.**
+
+These are three different things, and people often mix them up in a viva:
+
+| Piece | What it is | Analogy | In our code |
+|---|---|---|---|
+| **MILP** | the *problem*, written as maths: the 0/1 cells, the rules, and the score J. By itself it solves nothing | the **exam question** | the formulation in §4.1 |
+| **Pyomo** | a Python library for *writing* that maths and translating it into the matrix form solvers read | the **handwriting**: puts the question on paper in a standard format | `milp_model.build()`, `milp_model.py:29` |
+| **HiGHS** | an open-source, general-purpose **solver**: a program that solves *any* MILP, not just scheduling ones, using branch and bound | the **student** who answers the question | `Highs()` at `milp_model.py:98`, `opt.solve(md)` at `:103` |
+
+The key idea is that the model and the solver are **separate**. We could hand the very same MILP to
+another solver (Gurobi, CPLEX, CBC) without changing a single constraint, and get the same optimum,
+possibly faster or slower. HiGHS knows nothing about tasks or machines. It only sees thousands of
+0/1 variables, linear rows and one objective. *We* give those numbers their meaning.
+
+(Contrast with CP-SAT, §4.2.0: there the modelling library and the solver come as one package from
+OR-Tools, and the solver *does* know the problem is scheduling, through intervals and Cumulative.)
+
+```
+  Instance            milp_model.build()          Pyomo                 HiGHS                  back in our code
+ (tasks, VMs)  ──►  write the question:   ──►  translate to   ──►  solve it:            ──►  read ticks x = 1
+                    cells, rules, score J       matrix form          branch and bound          → Schedule
+                                                                     returns ticks,            → validator
+                                                                     objective, bound,         → metrics (J)
+                                                                     status
+```
+
+**In simple terms: what is the solution trying to achieve?**
+
+> *Among all the ways of ticking exactly one start cell per task, so that no machine is ever
+> overloaded and no task starts before it is released, find the tick pattern with the **lowest
+> score J**. That means finishing early, renting few and cheap machines for a short time, and being
+> late as little as possible. Then **prove** that no other tick pattern scores lower.*
+
+So the solver is doing two jobs at once:
+
+1. **Find a good answer.** It searches for legal tick patterns and keeps the best one seen so far
+   (the *incumbent*).
+2. **Prove nothing better exists.** It pushes up a lower bound on the best possible score. When the
+   best answer meets the bound, the answer is **optimal**.
+
+For the worked example (§4.5) the whole "solution" is just three ticks, `x[A,0,0] = x[B,0,0] =
+x[C,0,3] = 1` (A and B start at minute 0, C at minute 3), with J = 0.70 and status OPTIMAL.
+
+What HiGHS hands back, and what we do with it (`milp_model.py:103–114`):
+
+| HiGHS returns | Meaning | We use it as |
+|---|---|---|
+| values of every x[i,m,t] | which cells are ticked (1) | the schedule: task → machine, start, end |
+| objective value | J of the best schedule found | reported, then recomputed independently by `metrics.objective` |
+| best bound | the lowest J that could possibly exist | the gap = (objective − bound) / objective |
+| status | OPTIMAL (proven) or stopped at the time limit | the `status` column in the results |
+
 **How the solver (HiGHS) finds the best one: branch and bound.**
 
 1. **Relax:** pretend a cell may be ticked *partially* (e.g. 0.3 of a start). That makes it an
