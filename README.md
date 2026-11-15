@@ -46,6 +46,100 @@ coefficients, so the weights are scaled by 10⁶ and rounded (`src/cpsat_model.p
   and deadline tightness `τ` (`d_i = r_i + ⌈τ p_i⌉`). Every experiment is seeded.
 * Trace conversion assumptions A1–A6 are documented at the top of `src/trace.py`.
 
+## How the methods relate: FCFS, SJF, Greedy, MILP, HiGHS and CP-SAT
+
+Everything starts from **one problem**: given tasks and machines, decide which task runs on which
+machine and when.
+
+### Two ways to solve it
+
+```
+                         THE PROBLEM
+          "which task, on which machine, at what time?"
+                              │
+          ┌───────────────────┴───────────────────────┐
+          ▼                                           ▼
+   WAY 1: FOLLOW A RULE                     WAY 2: OPTIMISE
+   (heuristics / baselines)                 (write a model, let a solver search)
+          │                                           │
+   ┌──────┼───────┬─────────┐            ┌────────────┴────────────┐
+   ▼      ▼       ▼         ▼            ▼                         ▼
+  FCFS   SJF   Greedy   Greedy-J      MILP model              CP-SAT model
+                                     solved by HiGHS          solved by CP-SAT
+```
+
+**Way 1: rules (FCFS, SJF, Greedy, Greedy-J).** No maths is written down. A simple procedure is
+followed, the way a person would:
+
+- **FCFS:** take tasks in arrival order and start each one as early as possible.
+- **SJF:** take the shortest tasks first.
+- **Greedy:** send each task to the least-busy machine.
+- **Greedy-J:** send each task wherever it raises the score J the least.
+
+These are fast (about a millisecond). But each decision is made once and never reconsidered, so there
+is no guarantee the result is good.
+
+**Way 2: optimisation.** The problem is described precisely (variables, rules, score) and handed to
+a solver, which searches all legal schedules for the best one and can *prove* it is the best. This
+comes in **two pairs**, each made of *a way of writing the problem* plus *a program that solves it*:
+
+| Pair | The model (how the problem is written) | The solver (the program that solves it) |
+|---|---|---|
+| 1 | **MILP**: a giant yes/no grid, "does task i start on machine m at minute t?" | **HiGHS**: a general-purpose MILP solver |
+| 2 | **CP-SAT model**: tasks as blocks on machine lanes | **CP-SAT**: Google's solver |
+
+So **MILP and HiGHS are not two competing methods; they are a pair**: the MILP is the question,
+and HiGHS is the program that answers it. CP-SAT uses one name for both the modelling style and the
+solver, because the two come together in one package (Google OR-Tools).
+
+### A route-planning analogy
+
+| Our project | Analogy |
+|---|---|
+| FCFS / SJF / Greedy | rules of thumb: "always take the main road", "always turn toward the city centre" |
+| Greedy-J | at each junction, pick the turn that looks best right now |
+| MILP + HiGHS | draw the whole map as a grid of squares and have a general-purpose calculator check combinations |
+| CP-SAT | a GPS built specifically for roads, so it finds the best route much faster |
+
+### The same tiny example through every method
+
+One machine with 4 CPU. Tasks A (2 CPU, 3 min), B (2 CPU, 2 min), C (4 CPU, 1 min, available from
+minute 1). This is the worked example in §4.5 of `STUDY.md`.
+
+| Method | Kind | What happens | Finish time |
+|---|---|---|---|
+| FCFS | rule | A and B start at 0, C goes at 3 | **4** (lucky: optimal) |
+| SJF | rule | grabs C first at minute 1, which blocks A and B | **5** (worse) |
+| MILP + HiGHS | optimisation | searches every tick pattern and proves the best | **4**, proven optimal |
+| CP-SAT | optimisation | slides blocks around and proves the best | **4**, proven optimal |
+
+Both optimisers always agree on the answer (experiment E8). CP-SAT just gets there faster, and on big
+problems the MILP's grid becomes too large. **That is why CP-SAT is the main method, and the
+MILP + HiGHS pair exists only to cross-check it.**
+
+### How they work together in the code
+
+They are not only competitors:
+
+1. **The rules run first.** Greedy's cost becomes the yardstick in the score J ("cost 1.0 = as
+   expensive as Greedy").
+2. **The best rule's schedule is handed to CP-SAT** as a starting point, so CP-SAT only has to
+   improve on it.
+3. **Every method's schedule gets the same treatment:** the same feasibility checker
+   (`src/validate.py`), then the same score J (`src/metrics.py`). That is what makes the comparison fair.
+
+```
+ FCFS, SJF, Greedy, Greedy-J ──► schedules ──┐
+            │ best one = starting hint        │
+            ▼                                 ├──► validator ──► score J ──► compare
+ CP-SAT model ──► CP-SAT solver ──► schedule ─┤
+ MILP model   ──► HiGHS solver  ──► schedule ─┘    (MILP only in E8, as a cross-check)
+```
+
+**In one sentence:** the rules guess quickly, and the optimisers search and prove; MILP + HiGHS and
+CP-SAT are two ways of doing that same optimisation, and CP-SAT is the faster one, so it is the main
+solver.
+
 ## Repository layout
 
 ```
