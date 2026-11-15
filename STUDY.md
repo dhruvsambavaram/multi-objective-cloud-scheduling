@@ -70,6 +70,106 @@ A **schedule**: one row per task, `task, machine, start, end` (`src/instance.py:
 Why offline? It is the standard first model, it can be solved exactly, and it gives a clean
 benchmark. We then test the main real-world weakness of that assumption (wrong durations) in E6.
 
+### 2.4 Notation: every symbol used in this guide
+
+Read `x_y` as "x with subscript y". For example, `p_i` is "the duration of task i". `REPORT.md` uses
+the same symbols, with the few aliases listed in the last column.
+
+**Indices and sets**
+
+| Symbol | Meaning | In code | Alias in REPORT.md |
+|---|---|---|---|
+| i | a task (indexed 0, 1, 2, …). In the worked example the tasks are A, B, C | `Task.id` | |
+| m | a machine (VM): M0, M1, … | `Machine.id` | |
+| t, s | a time slot (minute). s is used for "a start slot" inside sums | slot index | |
+| I, M | the set of all tasks, the set of all machines | `inst.tasks`, `inst.machines` | |
+| M_i | machines that task i fits on (enough CPU and memory) | `inst.eligible(task)` | |
+
+**Task data (inputs)**
+
+| Symbol | Meaning | Unit | In code | Alias |
+|---|---|---|---|---|
+| cpu_i | CPU the task needs while it runs | CPU units | `Task.cpu` | c_i |
+| mem_i | memory the task needs while it runs | MEM units | `Task.mem` | q_i |
+| p_i | duration (processing time) | slots | `Task.p` | |
+| r_i | release time: earliest allowed start | slot | `Task.r` | |
+| d_i | deadline (soft): d_i = r_i + ⌈τ · p_i⌉ | slot | `Task.d` | |
+| w_i | priority weight (1, 2 or 3) that multiplies its lateness | – | `Task.w` | |
+
+**Machine data (inputs)**
+
+| Symbol | Meaning | Unit | In code | Alias |
+|---|---|---|---|---|
+| CPU_m | CPU capacity of machine m | CPU units | `Machine.cpu` | C_m |
+| MEM_m | memory capacity of machine m | MEM units | `Machine.mem` | Q_m |
+| k_m | price per slot while machine m is leased | cost / slot | `Machine.price` | |
+| F_m | one-off activation fee if machine m is used at all | cost | `Machine.fixed` | |
+
+**Time horizon**
+
+| Symbol | Meaning | In code |
+|---|---|---|
+| H | horizon: the last slot by which every task must have finished | `CpSatOptions.horizon`, `milp_model.solve(H=…)` |
+| safe H | max_i r_i + Σ_i p_i: always big enough (everything back to back) | `Instance.safe_horizon()` |
+
+**Decision variables: what the solver chooses**
+
+| Symbol | Model | Type | Meaning | In code |
+|---|---|---|---|---|
+| x[i,m,t] | MILP | 0/1 | 1 if task i **starts** on machine m at slot t (written x_imt in the proposal) | `md.x` |
+| y_m | both | 0/1 | 1 if machine m is used by at least one task | `md.y` / `y[m]` |
+| S_i | CP-SAT | integer | start slot of task i (S_C = start of task C, etc.) | `S[i]` |
+| a_im, a[i,m] | CP-SAT | 0/1 | 1 if task i runs on machine m. Switches its optional interval on | `a[i, m]` |
+| interval [S_i, S_i + p_i) | CP-SAT | interval | the block occupied by task i on machine m, present only if a_im = 1 | `NewOptionalFixedSizeIntervalVar` |
+
+**Derived quantities: computed from the decisions**
+
+| Symbol | Meaning | Formula | In code |
+|---|---|---|---|
+| end_i, C_i | completion (end) time of task i | S_i + p_i | `end[i]`, `md.C` |
+| T_i | tardiness (lateness) of task i | max(0, C_i − d_i) | `T[i]`, `md.T` |
+| Cmax | makespan: when the last task finishes | max_i C_i | `Cmax`, `metrics.makespan` |
+| E_m | lease end of machine m: when its last task finishes (0 if unused) | max over tasks on m of C_i | `E[m]`, `metrics.machine_end_times` |
+| e_im | helper for E_m in CP-SAT: end_i if task i is on m, else 0 | | `e` in `build()` |
+| Cost | total operating cost | Σ_m (F_m · y_m + k_m · E_m) | `metrics.cost` |
+| Σ w_i T_i | weighted tardiness: total lateness, weighted by priority | Σ_i w_i · T_i | `metrics.tardiness` |
+
+**Objective and normalisation**
+
+| Symbol | Meaning | Value / formula | In code |
+|---|---|---|---|
+| J | the normalised objective we minimise | α·Cmax/LB + β·Cost/Cost_ref + γ·Σ w_i T_i / Σ p_i | `metrics.objective` |
+| α, β, γ | weights on makespan, cost and tardiness | 0.4, 0.3, 0.3 | `Weights.alpha/beta/gamma` |
+| LB | lower bound on makespan (nothing can finish sooner) | max(max_i(r_i + p_i), ⌈Σ cpu_i·p_i / Σ CPU_m⌉, ⌈Σ mem_i·p_i / Σ MEM_m⌉) | `metrics.makespan_lb`, `Refs.lb` |
+| Cost_ref, Cost_greedy | cost of the Greedy schedule, used to normalise cost (same thing, two names) | | `Refs.cost_ref` |
+| Σ p_i | total work, used to normalise tardiness | | `Refs.work` |
+| SCALE | 10⁶: multiplies J's coefficients so CP-SAT gets integers | | `cpsat_model.SCALE` |
+| cost_ub | an upper bound on cost, used as the multiplier in `makespan` mode | Σ_m (F_m + k_m · H) | `build()` |
+| ε | the cap Cmax ≤ ε in the ε-constraint method (E4) | | `CpSatOptions.makespan_cap` |
+
+**Experiment knobs**
+
+| Symbol | Meaning | Typical values | In code |
+|---|---|---|---|
+| n | number of tasks | 10–100 | `generate(n_tasks=…)` |
+| ρ (rho) | offered load: how busy the pool is during the arrival window | 0.5–1.5 (1.0 default) | `generate(rho=…)` |
+| τ (tau) | deadline tightness: d_i = r_i + ⌈τ · p_i⌉. Smaller is tighter | 2.0 | `generate(tau=…)` |
+| δ (delta) | duration-noise level in E6 | 0, 0.1, 0.2, 0.3 | `simulate.perturb(delta=…)` |
+| ε_i | the random error of task i, drawn uniformly from [−δ, δ] | | `perturb` |
+| p̃_i | actual (noisy) duration: round(p_i · (1 + ε_i)) | | `perturb` |
+
+**Math symbols**
+
+| Symbol | Read as |
+|---|---|
+| Σ | "sum of". Σ_i means "add up over all tasks i" |
+| max_i | "the largest value over all tasks i" |
+| ⌈ x ⌉ | "x rounded **up** to a whole number" (ceiling), e.g. ⌈3.5⌉ = 4 |
+| ∈, ⊆ | "is in", "is a subset of" |
+| [a, b) | the time interval from a up to, but not including, b. [0, 3) = minutes 0, 1, 2 |
+| ≤, ≥ | at most, at least |
+| gap | (best schedule's objective − best proven bound) / best schedule's objective |
+
 ---
 
 ## 3. Choosing the objective: the most important modelling decisions

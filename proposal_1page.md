@@ -15,14 +15,16 @@ simple rules used in practice.
 **Scope.** Offline, deterministic batch scheduling: 10–100 tasks, 3–10 machines, integer time slots
 (1 slot = 1 min), no preemption. Online arrivals and rescheduling are out of scope.
 
-**Formulation.** Binary $x_{imt}=1$ if task $i$ starts on machine $m$ at slot $t$; $y_m=1$ if machine $m$ is
-used; completion $C_i$, tardiness $T_i$, makespan $C_{\max}$, machine lease end $E_m$.
+**Formulation.** Binary x[i,m,t] = 1 if task i starts on machine m at slot t; y_m = 1 if machine m is
+used; completion C_i, tardiness T_i, makespan Cmax, machine lease end E_m.
 
-$$\min\ \alpha\frac{C_{\max}}{LB} + \beta\frac{\sum_m (F_m y_m + k_m E_m)}{\text{Cost}_{\text{greedy}}} + \gamma\frac{\sum_i w_i T_i}{\sum_i p_i}$$
+```
+minimise  α · Cmax / LB  +  β · Σ_m (F_m·y_m + k_m·E_m) / Cost_greedy  +  γ · Σ_i w_i·T_i / Σ_i p_i
+```
 
 subject to: each task starts exactly once, at or after its release time; at every slot the running CPU
-and memory on each machine stay within its capacity; $C_i=\sum (t+p_i)x_{imt}$;
-$T_i \ge C_i-d_i$, $T_i\ge 0$ (soft deadlines); $C_{\max}\ge C_i$; $E_m \ge$ the end of every task on $m$. Each
+and memory on each machine stay within its capacity; C_i = Σ (t + p_i) · x[i,m,t];
+T_i ≥ C_i − d_i, T_i ≥ 0 (soft deadlines); Cmax ≥ C_i; E_m ≥ the end of every task on m. Each
 objective term is normalised to a dimensionless quantity (makespan relative to a provable lower bound,
 cost relative to a greedy schedule, and the fraction of work-time that is late), so the weights are
 genuine relative importances.
@@ -34,8 +36,8 @@ Pyomo + HiGHS on small instances, where its size grows linearly with the horizon
 First Served, Shortest Job First, Greedy least-loaded, and a cost-aware greedy. An independent checker
 validates every schedule.
 
-**Data.** Seeded synthetic workloads with an offered-load knob $\rho$ and a deadline-tightness knob
-$\tau$. Results are then validated on samples of the public **Google 2011 cluster trace** (CPU/memory
+**Data.** Seeded synthetic workloads with an offered-load knob ρ and a deadline-tightness knob
+τ. Results are then validated on samples of the public **Google 2011 cluster trace** (CPU/memory
 requests and observed runtimes from one `task_events` part). Conversion assumptions are documented.
 
 **Planned experiments.** (1) Method comparison on identical instances. (2) Solve time and gap versus

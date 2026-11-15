@@ -36,12 +36,12 @@ rescheduling are out of scope.
 
 | Symbol | Meaning |
 |---|---|
-| $i \in I$ | tasks: CPU $c_i$, memory $q_i$, duration $p_i$, release $r_i$, deadline $d_i$, weight $w_i$ |
-| $m \in M$ | machines: CPU capacity $C_m$, memory capacity $Q_m$, price per slot $k_m$, activation fee $F_m$ |
-| $M_i \subseteq M$ | machines that task $i$ fits on ($c_i \le C_m$, $q_i \le Q_m$) |
-| $H$ | scheduling horizon |
+| i ∈ I | tasks: CPU c_i, memory q_i, duration p_i, release r_i, deadline d_i, weight w_i |
+| m ∈ M | machines: CPU capacity C_m, memory capacity Q_m, price per slot k_m, activation fee F_m |
+| M_i ⊆ M | machines that task i fits on (c_i ≤ C_m, q_i ≤ Q_m) |
+| H | scheduling horizon |
 
-Three VM types are used: small (4 CPU, 8 MEM, $k=2$, $F=10$), medium (8, 16, 3, 15) and large
+Three VM types are used: small (4 CPU, 8 MEM, k = 2, F = 10), medium (8, 16, 3, 15) and large
 (16, 32, 5, 20). Larger VMs cost more per slot but less per CPU unit, so there is a real choice between
 one big machine and several small ones.
 
@@ -52,7 +52,9 @@ and durations did not depend on the machine. Then cost would depend only on the 
 timing, and it would barely interact with makespan. We instead model a VM as **leased from time 0 until
 its last task ends**, with an activation fee if it is used at all:
 
-$$\text{Cost} = \sum_m \left(F_m\,y_m + k_m\,E_m\right)$$
+```
+Cost = Σ_m ( F_m · y_m  +  k_m · E_m )
+```
 
 With this model, using fewer or cheaper machines lowers cost but delays completion, which is the
 conflict we want to study.
@@ -62,11 +64,15 @@ conflict we want to study.
 The raw terms have incompatible units: slots, cost units, and weighted slots. Each term is therefore
 divided by a natural reference:
 
-$$\min\; J = \alpha\,\frac{C_{\max}}{LB} + \beta\,\frac{\text{Cost}}{\text{Cost}_{\text{greedy}}} + \gamma\,\frac{\sum_i w_i T_i}{\sum_i p_i}, \qquad (\alpha,\beta,\gamma) = (0.4,\,0.3,\,0.3)$$
+```
+minimise  J = α · Cmax / LB  +  β · Cost / Cost_greedy  +  γ · Σ_i w_i·T_i / Σ_i p_i
 
-* $C_{\max}/LB \ge 1$ measures how far the makespan is from a provable lower bound (§2.6).
-* $\text{Cost}/\text{Cost}_{\text{greedy}}$ is cost relative to the greedy schedule (1.0 = as expensive as greedy).
-* $\sum w_i T_i / \sum p_i$ is the (weighted) fraction of total work-time that is late.
+with (α, β, γ) = (0.4, 0.3, 0.3)
+```
+
+* Cmax / LB ≥ 1 measures how far the makespan is from a provable lower bound (§2.6).
+* Cost / Cost_greedy is cost relative to the greedy schedule (1.0 = as expensive as greedy).
+* Σ w_i·T_i / Σ p_i is the (weighted) fraction of total work-time that is late.
 
 Every term is dimensionless and has a meaning, so the weights express relative importance. We put
 makespan first because completion time is the headline metric, and we weight cost and lateness equally.
@@ -74,78 +80,81 @@ makespan first because completion time is the headline metric, and we weight cos
 
 ### 2.4 Time-indexed MILP
 
-Variables: $x_{imt} \in \{0,1\}$ (task $i$ starts on $m$ at $t$, for $m \in M_i$ and $r_i \le t \le H-p_i$);
-$y_m \in \{0,1\}$; and continuous $C_i, T_i, E_m, C_{\max} \ge 0$.
+Variables: x[i,m,t] ∈ {0, 1} (task i starts on m at t, for m ∈ M_i and r_i ≤ t ≤ H − p_i);
+y_m ∈ {0, 1}; and continuous C_i, T_i, E_m, Cmax ≥ 0.
 
-$$
-\begin{aligned}
-&\textstyle\sum_{m}\sum_{t} x_{imt} = 1 && \forall i &&\text{(start exactly once; release via index set)}\\
-&\textstyle\sum_i \sum_{s=t-p_i+1}^{t} c_i\, x_{ims} \le C_m\, y_m && \forall m, t &&\text{(CPU capacity)}\\
-&\textstyle\sum_i \sum_{s=t-p_i+1}^{t} q_i\, x_{ims} \le Q_m\, y_m && \forall m, t &&\text{(memory capacity)}\\
-&\textstyle C_i = \sum_{m,t} (t+p_i)\, x_{imt} && \forall i &&\text{(completion)}\\
-&T_i \ge C_i - d_i,\; T_i \ge 0 && \forall i &&\text{(soft deadline)}\\
-&C_{\max} \ge C_i && \forall i &&\text{(makespan)}\\
-&\textstyle E_m \ge \sum_t (t+p_i)\, x_{imt} && \forall i, m &&\text{(lease end; RHS is 0 if } i \notin m)\\
-&x_{imt} \le y_m && &&\text{(tightening)}
-\end{aligned}
-$$
+```
+Σ_m Σ_t x[i,m,t] = 1                                  for all i      start exactly once (release via index set)
+Σ_i Σ_{s = t−p_i+1 … t} c_i · x[i,m,s]  ≤  C_m · y_m    for all m, t   CPU capacity
+Σ_i Σ_{s = t−p_i+1 … t} q_i · x[i,m,s]  ≤  Q_m · y_m    for all m, t   memory capacity
+C_i = Σ_{m,t} (t + p_i) · x[i,m,t]                    for all i      completion time
+T_i ≥ C_i − d_i,   T_i ≥ 0                            for all i      soft deadline (tardiness)
+Cmax ≥ C_i                                            for all i      makespan
+E_m ≥ Σ_t (t + p_i) · x[i,m,t]                        for all i, m   lease end (RHS = 0 if i is not on m)
+x[i,m,t] ≤ y_m                                        for all i,m,t  tightening
+```
 
-The model has $\approx \sum_i |M_i|\,(H - r_i - p_i + 1)$ binaries, so its size grows **linearly in the
-horizon**. With 100 tasks, 10 machines and $H=300$, that is about 300 000 binaries.
+The model has ≈ Σ_i |M_i| · (H − r_i − p_i + 1) binaries, so its size grows **linearly in the
+horizon**. With 100 tasks, 10 machines and H = 300, that is about 300 000 binaries.
 
 ### 2.5 CP-SAT model (primary)
 
 The same model, written with scheduling primitives:
 
-* $S_i \in [r_i, H-p_i]$ is the start of task $i$. Release times are encoded in the domain.
-* For each $m \in M_i$: a Boolean $a_{im}$ and an **optional interval** $[S_i, S_i+p_i)$ that exists iff $a_{im}$.
-* $\text{ExactlyOne}(a_{im} : m \in M_i)$ for every task.
-* Per machine, one $\text{Cumulative}$ on CPU (demands $c_i$, capacity $C_m$) and one on memory.
-* Exact definitions through max-equalities: $C_{\max} = \max_i (S_i+p_i)$; $T_i = \max(0, S_i+p_i-d_i)$;
-  $y_m = \max_i a_{im}$; and $E_m = \max_i e_{im}$, where $e_{im} = S_i+p_i$ if $a_{im}$ and $0$ otherwise.
+* S_i ∈ [r_i, H − p_i] is the start of task i. Release times are encoded in the domain.
+* For each m ∈ M_i: a Boolean a[i,m] and an **optional interval** [S_i, S_i + p_i) that exists iff a[i,m].
+* ExactlyOne(a[i,m] : m ∈ M_i) for every task.
+* Per machine, one Cumulative on CPU (demands c_i, capacity C_m) and one on memory.
+* Exact definitions through max-equalities: Cmax = max_i (S_i + p_i); T_i = max(0, S_i + p_i − d_i);
+  y_m = max_i a[i,m]; and E_m = max_i e[i,m], where e[i,m] = S_i + p_i if a[i,m] and 0 otherwise.
   Because these are equalities rather than bounds, the solver's reported makespan, cost and tardiness
   are exact, and the validator checks them.
 
-The model has $\sum_i |M_i|$ Booleans and intervals, **independent of $H$**. CP-SAT only accepts integer
-coefficients, so the three normalised weights are multiplied by $10^6$ and rounded
-($\alpha/LB \to \text{round}(10^6\alpha/LB)$, etc.). The rounding error is below $10^{-5}$ in $J$.
+The model has Σ_i |M_i| Booleans and intervals, **independent of H**. CP-SAT only accepts integer
+coefficients, so the three normalised weights are multiplied by 10⁶ and rounded
+(α/LB → round(10⁶ · α/LB), etc.). The rounding error is below 10⁻⁵ in J.
 
 The same model also supports the bi-objective study. A lexicographic "min cost, then makespan"
-objective $(H+1)\cdot\text{Cost} + C_{\max}$ combined with $C_{\max} \le \varepsilon$ gives the
+objective (H + 1) · Cost + Cmax combined with Cmax ≤ ε gives the
 ε-constraint method.
 
 ### 2.6 Horizon and lower bound
 
-* Safe horizon $H = \max_i r_i + \sum_i p_i$ (everything back to back always fits). CP-SAT uses this
-  horizon at no extra cost, because its size does not depend on $H$. For the MILP we use the much
+* Safe horizon H = max_i r_i + Σ_i p_i (everything back to back always fits). CP-SAT uses this
+  horizon at no extra cost, because its size does not depend on H. For the MILP we use the much
   tighter greedy makespan. This is valid because the greedy schedule is feasible within it, but it
   can in principle cut off weighted-optimal schedules that finish later.
 * Lower bound:
-  $LB = \max\big(\max_i (r_i+p_i),\ \lceil \sum_i c_i p_i / \sum_m C_m \rceil,\ \lceil \sum_i q_i p_i / \sum_m Q_m \rceil\big)$.
+
+  ```
+  LB = max(  max_i (r_i + p_i),
+             ⌈ Σ_i c_i·p_i / Σ_m C_m ⌉,
+             ⌈ Σ_i q_i·p_i / Σ_m Q_m ⌉  )
+  ```
 
 ## 3. Methodology and solver details
 
 **Baselines.** All baselines share one list-scheduling engine: tasks are ordered, then each is placed
-at the earliest slot $t \ge r_i$ at which both resources are free for $[t, t+p_i)$. Ties are broken
+at the earliest slot t ≥ r_i at which both resources are free for [t, t + p_i). Ties are broken
 deterministically.
 
 | Method | Order | Machine choice |
 |---|---|---|
 | FCFS | release time | earliest feasible start |
 | SJF | duration | earliest feasible start |
-| Greedy (least-loaded) | release time | least committed normalised work $\sum p_i (c_i/C_m + q_i/Q_m)$ |
-| Greedy-J (cost-aware) | release time | least increase of the objective $J$ |
+| Greedy (least-loaded) | release time | least committed normalised work Σ p_i · (c_i/C_m + q_i/Q_m) |
+| Greedy-J (cost-aware) | release time | least increase of the objective J |
 
 FCFS, SJF and Greedy ignore cost, as the classic rules do. We added Greedy-J so that the comparison
 also includes a heuristic that knows the objective, i.e. a myopic version of what CP-SAT optimises.
 
 **Solvers.** OR-Tools CP-SAT 9.15 runs with 8 workers and a 10 s limit unless stated otherwise. It is
 warm-started (`AddHint`) from the best baseline. The MILP uses Pyomo 6.10 with HiGHS 1.16.
-The optimality gap is $(\text{obj} - \text{bound}) / \text{obj}$ from the solver.
+The optimality gap is (obj − bound) / obj from the solver.
 
 **Validation.** An independent checker (`src/validate.py`) re-verifies **every schedule in every
 experiment** with a plain per-slot loop that shares no code with the models. It checks: each task is
-scheduled exactly once on a machine it fits; start $\ge r_i$; end $=$ start $+ p_i$; CPU and memory
+scheduled exactly once on a machine it fits; start ≥ r_i; end = start + p_i; CPU and memory
 within capacity in every slot. It also recomputes makespan, cost and tardiness and compares them with
 the solver's reported values. Unit tests add further checks: a hand-solved 3-task instance;
 single-machine identities; CP-SAT versus exhaustive brute force on 6 random 4-task instances; MILP
@@ -153,17 +162,17 @@ optimum = CP-SAT optimum; CP-SAT never worse than its warm start; same seed ⇒ 
 
 **Data.** *Synthetic:* the generator is seeded. Demands are lognormal; durations are bimodal (≈75 %
 short tasks around 4 slots, ≈25 % long jobs around 15 slots). Releases are spread over a window sized
-so that bottleneck work / pool capacity equals the offered load $\rho$, and $d_i = r_i + \lceil\tau p_i\rceil$
-(default $\rho = 1$, $\tau = 2$). *Real trace:* one part of the Google 2011 `task_events` table
+so that bottleneck work / pool capacity equals the offered load ρ, and d_i = r_i + ⌈τ · p_i⌉
+(default ρ = 1, τ = 2). *Real trace:* one part of the Google 2011 `task_events` table
 (37 944 usable finished tasks). Runtime = FINISH − SCHEDULE, rounded up to minutes. CPU and memory
 requests are scaled on the assumption that a large VM is 20 % of the trace's largest machine. Release
-order and spacing are kept but rescaled to $\rho = 1$, deadlines are synthetic with $\tau = 2$, and
+order and spacing are kept but rescaled to ρ = 1, deadlines are synthetic with τ = 2, and
 weights come from the trace priority tiers. The full list of conversion assumptions (A1–A6) is in
 `src/trace.py`.
 
 **Robustness protocol.** A plan is replayed as a *policy*: each task keeps its machine and its
 position in that machine's start order, and starts as early as release, order and capacity allow under
-the *actual* durations $\tilde p_i = \text{round}(p_i(1+\epsilon_i))$ with $\epsilon_i \sim U[-\delta,\delta]$.
+the *actual* durations p̃_i = round(p_i · (1 + ε_i)) with ε_i drawn uniformly from [−δ, δ].
 All policies see the same random draws (common random numbers). We use 30 draws per δ and 5 instances.
 
 ## 4. Experiments
@@ -208,14 +217,14 @@ the lower bound, and E5 shows that 6× more time improves the objective by under
 cannot do is *prove* a good bound on the cost term, which is a bin-packing-like problem.
 
 On small instances the MILP and CP-SAT reach **identical optima on all 12 instances** (E8). CP-SAT is 9–28× faster, although both are below 0.5 s at this size. The structural difference shows in the
-horizon study: on a fixed 8-task instance the MILP grows from 483 to 2 571 binaries as $H$ goes from
+horizon study: on a fixed 8-task instance the MILP grows from 483 to 2 571 binaries as H goes from
 29 to 116 slots, and its time grows with it, while CP-SAT's model stays at 27 assignment Booleans.
 This is why CP-SAT is the primary solver. A 100-task instance with the safe horizon (≈ 900 slots)
 would need hundreds of thousands of MILP binaries.
 
 ### 5.3 Cost–makespan trade-off (E4)
 
-The ε-constraint method, which minimises cost subject to $C_{\max} \le \varepsilon$ for every integer
+The ε-constraint method, which minimises cost subject to Cmax ≤ ε for every integer
 ε, gives a front of **16 non-dominated schedules, all proven optimal**, from (makespan 23, cost 313) to
 (40, 220). The marginal price of speed is steep near the fast end: going from 24 to 23 slots costs
 +7, and from 28 to 25 slots costs +32 in total. The front is nearly flat between 28 and 36 slots
