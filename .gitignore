@@ -1,0 +1,15 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Raw trace download (re-fetched by experiments/run_e7_trace.py if missing)
+data/raw/
+.pytest_cache/
+.DS_Store

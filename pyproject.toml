@@ -1,0 +1,19 @@
+[project]
+name = "multi-objective-cloud-scheduling"
+version = "0.1.0"
+description = "Multi-objective cloud task scheduling under CPU, memory, and deadline constraints"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "highspy>=1.16.0",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "ortools>=9.15.6755",
+    "pandas>=3.1.1",
+    "pyomo>=6.10.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
