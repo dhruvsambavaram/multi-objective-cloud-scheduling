@@ -2,8 +2,8 @@
 
 *Project topic: Cloud Computing Resource Allocation and Task Scheduling*
 
-**Team name:** `<TEAM NAME>`
-**Members:** `<Member 1>`, `<Member 2>`, `<Member 3>`
+**Team name:** PRs
+**Members:** Dhruv, Mitanshu, SaiPrathap
 
 ## Short description
 
